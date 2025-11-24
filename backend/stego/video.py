@@ -55,7 +55,7 @@ def embed_video(
     if not secret_message and not secret_file:
         raise VideoStegoError("Either secret_message or secret_file must be provided")
 
-    # ---- NEW: hard limit on input size for 512 MB RAM environments ----
+    # ---- Size guard for 512 MB environments ----
     if len(video_bytes) > MAX_VIDEO_BYTES:
         raise VideoStegoError(
             "Video too large for this server plan. "
@@ -154,13 +154,13 @@ def embed_video(
                 f"(~{total_bits_needed // 8} bytes)."
             )
 
-        # 5) Prepare writer for lossless intermediate video
-        no_audio_path = os.path.join(tmpdir, "video_no_audio.avi")
-        fourcc = cv2.VideoWriter_fourcc(*"HFYU")
+        # 5) Prepare writer for COMPRESSED intermediate video (mp4v, not HFYU)
+        no_audio_path = os.path.join(tmpdir, "video_no_audio.mp4")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # balanced: compressed, small
         writer = cv2.VideoWriter(no_audio_path, fourcc, fps, (width, height))
         if not writer.isOpened():
             cap.release()
-            raise VideoStegoError("Unable to create lossless output video")
+            raise VideoStegoError("Unable to create intermediate output video")
 
         # Bit cursor into full_payload (MSB first)
         bit_index = 0
@@ -205,26 +205,55 @@ def embed_video(
         # 7) Merge audio back from original video
         output_path = os.path.join(tmpdir, f"stego_output.{container}")
 
+        # BALANCED STRATEGY:
+        #   1) Try remux (copy video stream) -> smallest / fastest
+        #   2) If that fails, re-encode with libx264 + AAC
         try:
-            run_ffmpeg(
-                [
-                    "-i",
-                    no_audio_path,
-                    "-i",
-                    input_path,
-                    "-c:v",
-                    "copy",
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "1:a:0",
-                    output_path,
-                ]
-            )
+            try:
+                # Attempt 1: copy video stream as-is (mp4v) and bring over audio
+                run_ffmpeg(
+                    [
+                        "-i",
+                        no_audio_path,
+                        "-i",
+                        input_path,
+                        "-c:v",
+                        "copy",
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "1:a:0",
+                        output_path,
+                    ]
+                )
+            except FFmpegError:
+                # Attempt 2: re-encode video to H.264, audio AAC (still small, but more compatible)
+                run_ffmpeg(
+                    [
+                        "-i",
+                        no_audio_path,
+                        "-i",
+                        input_path,
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-crf",
+                        "23",
+                        "-c:a",
+                        "aac",
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "1:a:0",
+                        "-shortest",
+                        output_path,
+                    ]
+                )
         except FFmpegError:
-            # Fallback — deliver AVI if remux fails
+            # Final fallback — deliver the video without audio, still MP4
             output_path = no_audio_path
-            container = "avi"
+            container = "mp4"
 
         with open(output_path, "rb") as fh:
             final_bytes = fh.read()
@@ -250,7 +279,8 @@ def extract_video(
         )
 
     with tempfile.TemporaryDirectory(prefix="video-stego-") as tmpdir:
-        video_path = os.path.join(tmpdir, "stego_video.avi")
+        # Extension doesn't really matter to OpenCV; mp4 is more honest than avi
+        video_path = os.path.join(tmpdir, "stego_video.mp4")
         with open(video_path, "wb") as fh:
             fh.write(video_bytes)
 
