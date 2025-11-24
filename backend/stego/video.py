@@ -154,9 +154,9 @@ def embed_video(
                 f"(~{total_bits_needed // 8} bytes)."
             )
 
-        # 5) Prepare writer for COMPRESSED intermediate video (mp4v, not HFYU)
+        # 5) Prepare writer for MJPG intermediate video (balanced: small but LSB-friendly)
         no_audio_path = os.path.join(tmpdir, "video_no_audio.mp4")
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # balanced: compressed, small
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
         writer = cv2.VideoWriter(no_audio_path, fourcc, fps, (width, height))
         if not writer.isOpened():
             cap.release()
@@ -202,56 +202,30 @@ def embed_video(
                 "Unexpected error: ran out of frames before embedding completed"
             )
 
-        # 7) Merge audio back from original video
+        # 7) Merge audio back from original video WITHOUT re-encoding video
         output_path = os.path.join(tmpdir, f"stego_output.{container}")
 
-        # BALANCED STRATEGY:
-        #   1) Try remux (copy video stream) -> smallest / fastest
-        #   2) If that fails, re-encode with libx264 + AAC
         try:
-            try:
-                # Attempt 1: copy video stream as-is (mp4v) and bring over audio
-                run_ffmpeg(
-                    [
-                        "-i",
-                        no_audio_path,
-                        "-i",
-                        input_path,
-                        "-c:v",
-                        "copy",
-                        "-map",
-                        "0:v:0",
-                        "-map",
-                        "1:a:0",
-                        output_path,
-                    ]
-                )
-            except FFmpegError:
-                # Attempt 2: re-encode video to H.264, audio AAC (still small, but more compatible)
-                run_ffmpeg(
-                    [
-                        "-i",
-                        no_audio_path,
-                        "-i",
-                        input_path,
-                        "-c:v",
-                        "libx264",
-                        "-preset",
-                        "veryfast",
-                        "-crf",
-                        "23",
-                        "-c:a",
-                        "aac",
-                        "-map",
-                        "0:v:0",
-                        "-map",
-                        "1:a:0",
-                        "-shortest",
-                        output_path,
-                    ]
-                )
+            # Try to copy MJPG video stream as-is and add original audio
+            run_ffmpeg(
+                [
+                    "-i",
+                    no_audio_path,      # stego video (MJPG)
+                    "-i",
+                    input_path,         # original with audio
+                    "-c:v",
+                    "copy",             # NEVER re-encode video
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "1:a:0",
+                    "-shortest",
+                    output_path,
+                ]
+            )
         except FFmpegError:
-            # Final fallback — deliver the video without audio, still MP4
+            # If anything goes wrong (no audio, mapping issue, etc.),
+            # return the stego video WITHOUT audio – but still not re-encoded.
             output_path = no_audio_path
             container = "mp4"
 
@@ -279,7 +253,7 @@ def extract_video(
         )
 
     with tempfile.TemporaryDirectory(prefix="video-stego-") as tmpdir:
-        # Extension doesn't really matter to OpenCV; mp4 is more honest than avi
+        # Extension doesn't really matter to OpenCV; mp4 is fine here
         video_path = os.path.join(tmpdir, "stego_video.mp4")
         with open(video_path, "wb") as fh:
             fh.write(video_bytes)
