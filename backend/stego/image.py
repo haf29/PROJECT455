@@ -75,13 +75,7 @@ def embed_image(
         encrypted = _encrypt(raw, password)
         b64_encrypted = base64.b64encode(encrypted).decode("utf-8")
 
-                # Serialize + encrypt
-        import json
-        raw = json.dumps(payload).encode("utf-8")
-        encrypted = _encrypt(raw, password)
-        b64_encrypted = base64.b64encode(encrypted).decode("utf-8")
-
-        # ---- NEW: capacity check so we don't call stegano with oversized data ----
+        # ---- Capacity check so we don't call stegano with oversized data ----
         with Image.open(carrier_path) as im:
             width, height = im.size
             max_bits = width * height * 3       # 1 bit per color channel
@@ -92,8 +86,6 @@ def embed_image(
                 f"Payload too large for image. Max: {max_bytes} bytes, "
                 f"needed: {len(b64_encrypted)} bytes"
             )
-
-        
 
         # Hide inside BMP (LSB)
         try:

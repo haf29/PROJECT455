@@ -17,6 +17,7 @@ def _ensure_password(password: str) -> None:
     if not password:
         raise VideoStegoError("Password is required for video steganography")
 
+
 import base64
 import json
 
@@ -32,6 +33,9 @@ def _decrypt(data: bytes, password: str) -> bytes:
 
 _MAGIC = b"VST2"   # 4-byte magic marker for video stego v2
 _HEADER_SIZE = 8   # 4 bytes magic + 4 bytes payload length
+
+# Reasonable limit to avoid Render 512 MB OOM
+MAX_VIDEO_BYTES = 64 * 1024 * 1024  # 64 MB
 
 # ---------------------------------------------------------------------
 #                            EMBED VIDEO
@@ -51,6 +55,13 @@ def embed_video(
     if not secret_message and not secret_file:
         raise VideoStegoError("Either secret_message or secret_file must be provided")
 
+    # ---- NEW: hard limit on input size for 512 MB RAM environments ----
+    if len(video_bytes) > MAX_VIDEO_BYTES:
+        raise VideoStegoError(
+            "Video too large for this server plan. "
+            "Please upload a shorter or lower-resolution video (<= 64 MB)."
+        )
+
     container = (container or "mp4").lower()
     if not container.isalnum():
         container = "mp4"
@@ -62,15 +73,15 @@ def embed_video(
         with open(input_path, "wb") as fh:
             fh.write(video_bytes)
 
-        # 2) Downscale to 720p for predictable capacity/speed
-        scaled_path = os.path.join(tmpdir, "scaled_720p.mp4")
+        # 2) Downscale to 480p (lighter than 720p, safer for memory/CPU)
+        scaled_path = os.path.join(tmpdir, "scaled_480p.mp4")
         try:
             run_ffmpeg(
                 [
                     "-i",
                     input_path,
                     "-vf",
-                    "scale=1280:720",
+                    "scale=854:480",   # 480p instead of 720p
                     "-preset",
                     "fast",
                     scaled_path,
@@ -119,13 +130,13 @@ def embed_video(
         # Capacity of video in bits (1 LSB per channel)
         if frame_count <= 0:
             # Fallback: approximate by streaming once
-            # (we still do a rough check – worst case we discover lack of capacity later)
             frame_count = 0
             while True:
                 ok, frame = cap.read()
                 if not ok:
                     break
                 frame_count += 1
+                del frame
             cap.release()
             cap = cv2.VideoCapture(scaled_path)
             if not cap.isOpened():
@@ -181,6 +192,7 @@ def embed_video(
                 frame = flat.reshape(frame.shape)
 
             writer.write(frame)
+            del frame  # free RAM immediately per frame
 
         writer.release()
         cap.release()
@@ -221,7 +233,6 @@ def embed_video(
         return final_bytes, extension
 
 
-
 # ---------------------------------------------------------------------
 #                            EXTRACT VIDEO
 # ---------------------------------------------------------------------
@@ -230,6 +241,13 @@ def extract_video(
 ) -> tuple[Optional[str], Optional[bytes], Optional[str]]:
 
     _ensure_password(password)
+
+    # Same size limit for extraction (protects against massive uploads)
+    if len(video_bytes) > MAX_VIDEO_BYTES:
+        raise VideoStegoError(
+            "Video too large for this server plan. "
+            "Please upload a shorter or lower-resolution video (<= 64 MB)."
+        )
 
     with tempfile.TemporaryDirectory(prefix="video-stego-") as tmpdir:
         video_path = os.path.join(tmpdir, "stego_video.avi")
@@ -291,7 +309,6 @@ def extract_video(
                         payload_bits_expected = payload_len * 8
                 else:
                     if payload_bits_expected is None:
-                        # Should not happen, but safety check
                         cap.release()
                         raise VideoStegoError("Internal error: header not parsed")
 
@@ -303,6 +320,8 @@ def extract_video(
                         if payload_bits_collected == payload_bits_expected:
                             done = True
                             break
+
+            del frame  # free RAM per frame
 
             if done:
                 break
