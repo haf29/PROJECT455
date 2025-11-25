@@ -3,9 +3,6 @@ import type { ChangeEvent, FC } from "react";
 import {
   Upload,
   Lock,
-  FileAudio,
-  FileVideo,
-  FileImage,
   FileText,
   Download,
   Loader2,
