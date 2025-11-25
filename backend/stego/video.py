@@ -13,9 +13,10 @@ class VideoStegoError(Exception):
     """Raised when video steganography operations fail."""
 
 
-def _ensure_password(password: str) -> None:
-    if not password:
-        raise VideoStegoError("Password is required for video steganography")
+def _ensure_password(password: str, encrypt: bool) -> None:
+    if encrypt and not password:
+        raise VideoStegoError("Password required when encrypt=True")
+
 
 
 import base64
@@ -45,12 +46,13 @@ def embed_video(
     password: str,
     container: str = "mp4",
     *,
+    encrypt: bool = True,
     secret_message: Optional[str] = None,
     secret_file: Optional[bytes] = None,
     secret_filename: Optional[str] = None,
 ) -> Tuple[bytes, str]:
 
-    _ensure_password(password)
+    _ensure_password(password,encrypt)
 
     if not secret_message and not secret_file:
         raise VideoStegoError("Either secret_message or secret_file must be provided")
@@ -118,7 +120,12 @@ def embed_video(
             }
 
         raw = json.dumps(payload_obj).encode("utf-8")
-        encrypted = _encrypt(raw, password)
+        if encrypt:
+            if not password:
+                raise VideoStegoError("Password required when encrypt=True")
+            encrypted = _encrypt(raw, password)
+        else:
+            encrypted = raw
         b64_encrypted = base64.b64encode(encrypted)  # bytes
 
         payload_len = len(b64_encrypted)  # in bytes
@@ -236,11 +243,9 @@ def embed_video(
 # ---------------------------------------------------------------------
 #                            EXTRACT VIDEO
 # ---------------------------------------------------------------------
-def extract_video(
-    video_bytes: bytes, password: str
-) -> tuple[Optional[str], Optional[bytes], Optional[str]]:
+def extract_video(video_bytes: bytes, password: str, encrypt: bool = True):
 
-    _ensure_password(password)
+    _ensure_password(password,encrypt)
 
     # Same size limit for extraction (protects against massive uploads)
     if len(video_bytes) > MAX_VIDEO_BYTES:
@@ -338,7 +343,12 @@ def extract_video(
         try:
             b64_encrypted = payload_bytes
             encrypted = base64.b64decode(b64_encrypted)
-            raw = _decrypt(encrypted, password)
+            if encrypt:
+                if not password:
+                    raise VideoStegoError("Password required when encrypt=True")
+                raw = _decrypt(encrypted, password)
+            else:
+                raw = encrypted
         except Exception:
             raise VideoStegoError("Incorrect password or corrupted payload")
 

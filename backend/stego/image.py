@@ -6,6 +6,7 @@ from typing import Optional
 
 from PIL import Image
 from stegano import lsb
+import json
 
 
 class ImageStegoError(Exception):
@@ -13,12 +14,14 @@ class ImageStegoError(Exception):
 
 
 def _ensure_password(password: str) -> None:
-    if not password:
-        raise ImageStegoError("Password is required for image steganography")
+    # Password is optional IF encrypt=False
+    return
 
 
-# --- Simple XOR encryption for password-protected payload ---
+# --- Simple XOR encryption ----
 def _encrypt(data: bytes, password: str) -> bytes:
+    if not password:
+        return data
     key = password.encode()
     return bytes([data[i] ^ key[i % len(key)] for i in range(len(data))])
 
@@ -27,24 +30,23 @@ def _decrypt(data: bytes, password: str) -> bytes:
     return _encrypt(data, password)  # XOR decrypt = encrypt
 
 
-# --------------------------------------------------------------------- #
-#                              EMBEDDING
-# --------------------------------------------------------------------- #
+# ================================================================
+#                         EMBEDDING
+# ================================================================
 def embed_image(
     carrier_bytes: bytes,
     password: str,
     *,
+    encrypt: bool = True,
     secret_message: Optional[str] = None,
     secret_file: Optional[bytes] = None,
     secret_filename: Optional[str] = None,
 ) -> bytes:
 
-    _ensure_password(password)
-
     if not secret_message and not secret_file:
         raise ImageStegoError("Either secret_message or secret_file must be provided")
 
-    # Convert carrier to BMP (critical for LSB reliability)
+    # Convert carrier to BMP
     with tempfile.TemporaryDirectory(prefix="image-stego-") as tmpdir:
         carrier_path = os.path.join(tmpdir, "carrier.bmp")
         stego_path = os.path.join(tmpdir, "stego.bmp")
@@ -56,7 +58,7 @@ def embed_image(
         except Exception as exc:
             raise ImageStegoError("Unsupported or corrupted carrier image") from exc
 
-        # Prepare payload
+        # Build payload object
         if secret_file is not None:
             payload = {
                 "type": "file",
@@ -69,32 +71,38 @@ def embed_image(
                 "data": secret_message,
             }
 
-        # Serialize + encrypt
-        import json
+        # Serialize payload
         raw = json.dumps(payload).encode("utf-8")
-        encrypted = _encrypt(raw, password)
+
+        # Encrypt (optional)
+        if encrypt:
+            if not password:
+                raise ImageStegoError("Password required when encrypt=True")
+            encrypted = _encrypt(raw, password)
+        else:
+            encrypted = raw
+
         b64_encrypted = base64.b64encode(encrypted).decode("utf-8")
 
-        # ---- Capacity check so we don't call stegano with oversized data ----
+        # Capacity limit check
         with Image.open(carrier_path) as im:
             width, height = im.size
-            max_bits = width * height * 3       # 1 bit per color channel
+            max_bits = width * height * 3
             max_bytes = max_bits // 8
 
         if len(b64_encrypted) > max_bytes:
             raise ImageStegoError(
-                f"Payload too large for image. Max: {max_bytes} bytes, "
-                f"needed: {len(b64_encrypted)} bytes"
+                f"Payload too large for image. Max: {max_bytes} bytes, needed: {len(b64_encrypted)} bytes"
             )
 
-        # Hide inside BMP (LSB)
+        # Hide
         try:
             secret_img = lsb.hide(carrier_path, b64_encrypted)
             secret_img.save(stego_path, format="BMP")
         except Exception as exc:
             raise ImageStegoError("Failed to embed message in image") from exc
 
-        # Return final image bytes
+        # Return bytes
         try:
             with open(stego_path, "rb") as fh:
                 return fh.read()
@@ -102,12 +110,10 @@ def embed_image(
             raise ImageStegoError("Unable to create stego image") from exc
 
 
-# --------------------------------------------------------------------- #
-#                              EXTRACTION
-# --------------------------------------------------------------------- #
-def extract_image(stego_bytes: bytes, password: str):
-    _ensure_password(password)
-
+# ================================================================
+#                         EXTRACTION
+# ================================================================
+def extract_image(stego_bytes: bytes, password: str, encrypt: bool = True):
     with tempfile.TemporaryDirectory(prefix="image-stego-") as tmpdir:
         stego_path = os.path.join(tmpdir, "stego.bmp")
 
@@ -118,33 +124,44 @@ def extract_image(stego_bytes: bytes, password: str):
         except Exception as exc:
             raise ImageStegoError("Unsupported or corrupted stego image") from exc
 
-        # Extract raw LSB payload
+        # Extract hidden data
         try:
             hidden = lsb.reveal(stego_path)
         except Exception as exc:
             raise ImageStegoError("Failed to extract message from image") from exc
 
-        if hidden is None:
+        if not hidden:
             raise ImageStegoError("No hidden message or file found in image")
 
-        # Decode & decrypt
+        # Decode base64 → encrypted bytes
         try:
             encrypted = base64.b64decode(hidden.encode("utf-8"))
-            raw = _decrypt(encrypted, password)
         except Exception:
-            raise ImageStegoError("Incorrect password or corrupted payload")
+            raise ImageStegoError("Corrupted payload")
 
-        import json
+        # Decrypt if needed
+        if encrypt:
+            if not password:
+                raise ImageStegoError("Password required when encrypt=True")
+            raw = _decrypt(encrypted, password)
+        else:
+            raw = encrypted
+
+        # Load JSON payload
         try:
             obj = json.loads(raw.decode("utf-8"))
         except Exception:
             raise ImageStegoError("Invalid embedded data format")
 
-        # Message type check
+        # Return result
         if obj["type"] == "text":
             return obj["data"], None, None
 
-        elif obj["type"] == "file":
-            return None, base64.b64decode(obj["data"]), obj["filename"]
+        if obj["type"] == "file":
+            return (
+                None,
+                base64.b64decode(obj["data"]),
+                obj["filename"],
+            )
 
         raise ImageStegoError("Unknown embedded payload type")

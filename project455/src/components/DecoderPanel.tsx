@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
 import {
   Upload,
   Unlock,
@@ -28,6 +28,7 @@ import {
 export const DecoderPanel = () => {
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [key, setKey] = useState("");
+  const [encryptEnabled, setEncryptEnabled] = useState(true); // 🔥 NEW
   const [isDecoding, setIsDecoding] = useState(false);
   const [progress, setProgress] = useState(0);
   const [decodedMessage, setDecodedMessage] = useState("");
@@ -44,7 +45,7 @@ export const DecoderPanel = () => {
       return null;
     });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!isAudioFile(file) && !isVideoFile(file) && !isImageFile(file)) {
@@ -72,7 +73,7 @@ export const DecoderPanel = () => {
       toast.error("Please select an audio, video, or image file");
       return;
     }
-    if (!key.trim()) {
+    if (encryptEnabled && !key.trim()) {
       toast.error("Please enter the encryption key");
       return;
     }
@@ -85,7 +86,13 @@ export const DecoderPanel = () => {
 
     try {
       if (isVideoFile(mediaFile)) {
-        const result = await decodeVideo(mediaFile, key, (prog) => setProgress(prog));
+        const result = await decodeVideo(
+          mediaFile,
+          key,
+          encryptEnabled, // 🔥 pass encrypt flag
+          (prog: number) => setProgress(prog)
+        );
+
         const message = result.message ?? "";
         const hasMessage = message.length > 0;
         const hasFile = result.file instanceof Blob;
@@ -101,11 +108,7 @@ export const DecoderPanel = () => {
         if (!hasFile && !hasMessage) {
           toast.info("No payload found in this video.");
         } else {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 }
-          });
+          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
           if (hasFile && hasMessage) {
             toast.success("Hidden file and message extracted! ✨");
           } else if (hasFile) {
@@ -115,7 +118,13 @@ export const DecoderPanel = () => {
           }
         }
       } else if (isImageFile(mediaFile)) {
-        const result = await decodeImage(mediaFile, key, (prog) => setProgress(prog));
+        const result = await decodeImage(
+          mediaFile,
+          key,
+          encryptEnabled, // 🔥 pass encrypt flag
+          (prog: number) => setProgress(prog)
+        );
+
         const message = result.message ?? "";
         const hasMessage = message.length > 0;
         const hasFile = result.file instanceof Blob;
@@ -131,11 +140,7 @@ export const DecoderPanel = () => {
         if (!hasFile && !hasMessage) {
           toast.info("No payload found in this image.");
         } else {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 }
-          });
+          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
           if (hasFile && hasMessage) {
             toast.success("Hidden file and message extracted! ✨");
           } else if (hasFile) {
@@ -145,13 +150,14 @@ export const DecoderPanel = () => {
           }
         }
       } else {
-        const decoded = await decodeAudio(mediaFile, key, (prog) => setProgress(prog));
+        const decoded = await decodeAudio(
+          mediaFile,
+          key,
+          encryptEnabled, // 🔥 pass encrypt flag
+          (prog: number) => setProgress(prog)
+        );
         setDecodedMessage(decoded);
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
         toast.success("Message decoded successfully! ✨");
       }
     } catch (error: any) {
@@ -169,20 +175,16 @@ export const DecoderPanel = () => {
       toast.error("Please paste the watermarked text to decode");
       return;
     }
-    if (!key.trim()) {
+    if (encryptEnabled && !key.trim()) {
       toast.error("Please enter the encryption key");
       return;
     }
 
     setIsDecodingText(true);
     try {
-      const message = await decodeText(watermarkedText, key);
+      const message = await decodeText(watermarkedText, key, encryptEnabled); // 🔥 pass encrypt flag
       setDecodedTextMessage(message);
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       toast.success("Hidden message extracted from text! ✨");
     } catch (error: any) {
       console.error("Text decode error:", error);
@@ -220,6 +222,19 @@ export const DecoderPanel = () => {
         </div>
 
         <div className="space-y-6">
+          {/* Encryption toggle */}
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-foreground">Encrypted Payload</span>
+            <Button
+              variant={encryptEnabled ? "default" : "outline"}
+              onClick={() => setEncryptEnabled(!encryptEnabled)}
+              className="px-4 py-1"
+            >
+              {encryptEnabled ? "ON" : "OFF"}
+            </Button>
+          </div>
+
+          {/* File input */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Select Stego Audio (WAV), Video (MP4, WebM, etc.), or Image (PNG, JPG) File
@@ -252,7 +267,8 @@ export const DecoderPanel = () => {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{mediaFile.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {(mediaFile.size / 1024).toFixed(1)} KB • {isVideoFile(mediaFile) ? "Video" : isImageFile(mediaFile) ? "Image" : "Audio"}
+                        {(mediaFile.size / 1024).toFixed(1)} KB •{" "}
+                        {isVideoFile(mediaFile) ? "Video" : isImageFile(mediaFile) ? "Image" : "Audio"}
                       </p>
                     </div>
                   </div>
@@ -261,25 +277,28 @@ export const DecoderPanel = () => {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-2">
-              Encryption Key
-            </label>
-            <input
-              type="text"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder="Enter the encryption key used to encode..."
-              className="w-full p-4 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-            <p className="text-xs text-muted-foreground mt-2">
-              Enter the same key that was used to encode the message
-            </p>
-          </div>
+          {/* Key input */}
+          {encryptEnabled && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Encryption Key
+              </label>
+              <input
+                type="text"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder="Enter the encryption key used to encode..."
+                className="w-full p-4 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Enter the same key that was used to encode the message.
+              </p>
+            </div>
+          )}
 
           <Button
             onClick={handleDecode}
-            disabled={isDecoding || !mediaFile || !key.trim()}
+            disabled={isDecoding || !mediaFile || (encryptEnabled && !key.trim())}
             size="lg"
             className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
           >
@@ -299,7 +318,13 @@ export const DecoderPanel = () => {
           {isDecoding && (
             <div className="space-y-2 animate-fade-in">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{progress < 0.3 ? "Reading carrier..." : progress < 0.7 ? "Extracting..." : "Decrypting..."}</span>
+                <span>
+                  {progress < 0.3
+                    ? "Reading carrier..."
+                    : progress < 0.7
+                    ? "Extracting..."
+                    : "Decrypting..."}
+                </span>
                 <span>{Math.round(progress * 100)}%</span>
               </div>
               <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
@@ -320,10 +345,14 @@ export const DecoderPanel = () => {
                 <h3 className="font-semibold text-foreground text-lg">Decoded Message</h3>
               </div>
               <div className="p-4 rounded-lg bg-background/50 border border-accent/20">
-                <p className="text-foreground leading-relaxed whitespace-pre-wrap">{decodedMessage}</p>
+                <p className="text-foreground leading-relaxed whitespace-pre-wrap">
+                  {decodedMessage}
+                </p>
               </div>
               <div className="mt-4 flex items-center gap-2 p-3 rounded-lg bg-accent/10">
-                <span className="text-sm text-muted-foreground">✓ Message successfully extracted</span>
+                <span className="text-sm text-muted-foreground">
+                  ✓ Message successfully extracted
+                </span>
               </div>
             </Card>
           )}
@@ -341,7 +370,9 @@ export const DecoderPanel = () => {
                   <FileText className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{decodedFile.filename}</p>
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {decodedFile.filename}
+                  </p>
                   <p className="text-xs text-muted-foreground">Ready for download</p>
                 </div>
               </div>
@@ -390,7 +421,7 @@ export const DecoderPanel = () => {
 
           <Button
             onClick={handleTextDecode}
-            disabled={isDecodingText || !watermarkedText.trim() || !key.trim()}
+            disabled={isDecodingText || !watermarkedText.trim() || (encryptEnabled && !key.trim())}
             size="lg"
             className="w-full bg-muted hover:bg-muted/80 text-foreground"
           >
@@ -413,13 +444,21 @@ export const DecoderPanel = () => {
                 <div className="p-2 rounded-lg bg-muted/20">
                   <Eye className="w-5 h-5 text-foreground" />
                 </div>
-                <h3 className="font-semibold text-foreground text-lg">Decoded Text Message</h3>
+                <h3 className="font-semibold text-foreground text-lg">
+                  Decoded Text Message
+                </h3>
               </div>
               <div className="p-4 rounded-lg bg-background/50 border border-border">
-                <p className="text-foreground leading-relaxed whitespace-pre-wrap">{decodedTextMessage}</p>
+                <p className="text-foreground leading-relaxed whitespace-pre-wrap">
+                  {decodedTextMessage}
+                </p>
               </div>
               <div className="mt-4 flex justify-end">
-                <Button onClick={handleCopyDecodedText} variant="outline" className="flex items-center gap-2">
+                <Button
+                  onClick={handleCopyDecodedText}
+                  variant="outline"
+                  className="flex items-center gap-2"
+                >
                   <Copy className="w-4 h-4" />
                   Copy Decoded Message
                 </Button>
@@ -431,4 +470,3 @@ export const DecoderPanel = () => {
     </div>
   );
 };
-

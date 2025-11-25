@@ -8,20 +8,27 @@ from .wav import parse_wav, WavFormatError
 MAGIC = b"STG1"
 
 
-def _ensure_audio(password: str) -> bytes:
-    if not password:
-        raise AudioProcessingError("Password is required")
-    return derive_key(password)
+def _ensure_audio(password: str, encrypt: bool) -> bytes:
+    if encrypt:
+        if not password:
+            raise AudioProcessingError("Password required when encryption=True")
+        return derive_key(password)
+    else:
+        return b""  # dummy key, not used
 
 
-def embed_audio(wav_bytes: bytes, payload: bytes, password: str, use_ecc: bool = True) -> bytes:
+
+def embed_audio(wav_bytes: bytes, payload: bytes, password: str, encrypt: bool = True, use_ecc: bool = True)-> bytes:
     try:
         data_offset, data_size, _ = parse_wav(wav_bytes)
     except WavFormatError as exc:
         raise AudioProcessingError(str(exc)) from exc
 
-    key = _ensure_audio(password)
-    encrypted = encrypt_ctr(key, payload)
+    key = _ensure_audio(password, encrypt)
+    if encrypt:
+        encrypted = encrypt_ctr(key, payload)
+    else:
+        encrypted = payload  # store plaintext
     flags = bytes([1 if use_ecc else 0])
     header = MAGIC + flags + len(encrypted).to_bytes(4, "big")
 
@@ -46,13 +53,13 @@ def embed_audio(wav_bytes: bytes, payload: bytes, password: str, use_ecc: bool =
     return bytes(wav)
 
 
-def extract_audio(wav_bytes: bytes, password: str) -> bytes:
+def extract_audio(wav_bytes: bytes, password: str, encrypt: bool = True) -> bytes:
     try:
         data_offset, data_size, _ = parse_wav(wav_bytes)
     except WavFormatError as exc:
         raise AudioProcessingError(str(exc)) from exc
 
-    key = _ensure_audio(password)
+    key = _ensure_audio(password,encrypt)
     total_samples = data_size // 2
 
     def read_bits(count: int, start_bit: int) -> List[int]:
@@ -85,5 +92,8 @@ def extract_audio(wav_bytes: bytes, password: str) -> bytes:
         raw_bits = hamming_decode(raw_bits)
     enc_bytes = bytes(bits_to_bytes(raw_bits))[:enc_len]
 
-    decrypted = decrypt_ctr(key, enc_bytes)
+    if encrypt:
+        decrypted = decrypt_ctr(key, enc_bytes)
+    else:
+        decrypted = enc_bytes
     return decrypted

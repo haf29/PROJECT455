@@ -28,32 +28,39 @@ export const DemoPanel = () => {
     setEncodedBlob(null);
 
     try {
-      // Step 1: Generate sample audio
+      // Step 1
       toast.info("Step 1: Generating sample audio...");
       await new Promise((resolve) => setTimeout(resolve, 800));
       const sampleAudio = await generateSampleAudio();
       setStep(1);
 
-      // Step 2: Encode message
+      // Step 2
       toast.info("Step 2: Hiding secret message...");
       await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // IMPORTANT: encryption disabled in demo (false)
       const encoded = await encodeAudio(
         new File([sampleAudio], "sample.wav", { type: "audio/wav" }),
         DEMO_MESSAGE,
         DEMO_KEY,
-        () => {}
+        false,           // 🔥 DISABLE ENCRYPTION
+        () => {}         // onProgress callback
       );
+
       setEncodedBlob(encoded);
       setStep(2);
 
-      // Step 3: Decode message
+      // Step 3
       toast.info("Step 3: Extracting hidden message...");
       await new Promise((resolve) => setTimeout(resolve, 500));
+
       const decoded = await decodeAudio(
         new File([encoded], "stego_sample.wav", { type: "audio/wav" }),
         DEMO_KEY,
-        () => {}
+        false,          // 🔥 DISABLE ENCRYPTION FOR DEMO
+        () => {}        // onProgress
       );
+
       setDecodedMessage(decoded);
       setStep(3);
 
@@ -79,18 +86,16 @@ export const DemoPanel = () => {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <Card className="p-8 glass-effect text-center animate-fade-in">
         <div className="inline-flex p-4 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 mb-4">
           <Sparkles className="w-12 h-12 text-primary animate-pulse-glow" />
         </div>
-        <h2 className="text-3xl font-bold text-foreground mb-3">
-          Interactive Demo
-        </h2>
+        <h2 className="text-3xl font-bold text-foreground mb-3">Interactive Demo</h2>
         <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-6">
           Watch steganography in action! This demo will generate a sample audio file,
           hide a secret message, and then extract it.
         </p>
+
         <Button
           onClick={runDemo}
           disabled={isRunning}
@@ -111,7 +116,6 @@ export const DemoPanel = () => {
         </Button>
       </Card>
 
-      {/* Progress Steps */}
       {step > 0 && (
         <div className="grid md:grid-cols-4 gap-4 animate-fade-in">
           {steps.map((s, index) => (
@@ -145,71 +149,42 @@ export const DemoPanel = () => {
         </div>
       )}
 
-      {/* Results */}
       {step === 3 && (
         <div className="grid md:grid-cols-2 gap-6 animate-scale-in">
-          {/* Original Message */}
           <Card className="p-6 glass-effect border-primary/50">
             <div className="flex items-center gap-2 mb-4">
               <div className="p-2 rounded-lg bg-primary/20">
                 <Eye className="w-5 h-5 text-primary" />
               </div>
-              <h3 className="font-semibold text-foreground text-lg">
-                Original Message
-              </h3>
+              <h3 className="font-semibold text-foreground text-lg">Original Message</h3>
             </div>
             <div className="p-4 rounded-lg bg-background/50 border border-primary/20">
-              <p className="text-foreground leading-relaxed">{DEMO_MESSAGE}</p>
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Encryption Key:</span>
-                <code className="text-primary font-mono text-xs">{DEMO_KEY}</code>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Message Length:</span>
-                <span className="text-foreground font-medium">
-                  {DEMO_MESSAGE.length} characters
-                </span>
-              </div>
+              <p className="text-foreground">{DEMO_MESSAGE}</p>
             </div>
           </Card>
 
-          {/* Decoded Message */}
           <Card className="p-6 glass-effect border-accent/50">
             <div className="flex items-center gap-2 mb-4">
               <div className="p-2 rounded-lg bg-accent/20">
                 <Sparkles className="w-5 h-5 text-accent" />
               </div>
-              <h3 className="font-semibold text-foreground text-lg">
-                Decoded Message
-              </h3>
+              <h3 className="font-semibold text-foreground text-lg">Decoded Message</h3>
             </div>
             <div className="p-4 rounded-lg bg-background/50 border border-accent/20">
-              <p className="text-foreground leading-relaxed">{decodedMessage}</p>
-            </div>
-            <div className="mt-4">
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-accent/10">
-                <div className="flex-1">
-                  <span className="text-sm text-muted-foreground">
-                    Messages match perfectly! ✓
-                  </span>
-                </div>
-              </div>
+              <p className="text-foreground">{decodedMessage}</p>
             </div>
           </Card>
         </div>
       )}
 
-      {/* Download Options */}
       {encodedBlob && (
         <Card className="p-6 glass-effect text-center animate-fade-in">
           <h3 className="font-semibold text-foreground text-lg mb-4">
             Try It Yourself
           </h3>
           <p className="text-muted-foreground mb-6">
-            Download the demo stego file and try decoding it in the Decode tab
-            using the key: <code className="text-primary font-mono">{DEMO_KEY}</code>
+            Download the demo stego file and decode it using:{" "}
+            <code className="text-primary font-mono">{DEMO_KEY}</code>
           </p>
           <Button
             onClick={downloadStego}
@@ -221,75 +196,40 @@ export const DemoPanel = () => {
           </Button>
         </Card>
       )}
-
-      {/* Info Cards */}
-      <div className="grid md:grid-cols-3 gap-4">
-        <Card className="p-4 glass-effect hover-lift">
-          <h4 className="font-semibold text-foreground mb-2 text-sm">
-            🎵 Audio Generation
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            Creates a 1-second pure tone as sample carrier audio
-          </p>
-        </Card>
-        <Card className="p-4 glass-effect hover-lift">
-          <h4 className="font-semibold text-foreground mb-2 text-sm">
-            🔐 LSB Encoding
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            Hides message in least significant bits of audio samples
-          </p>
-        </Card>
-        <Card className="p-4 glass-effect hover-lift">
-          <h4 className="font-semibold text-foreground mb-2 text-sm">
-            ✨ Perfect Recovery
-          </h4>
-          <p className="text-xs text-muted-foreground">
-            Extracts the exact original message using the secret key
-          </p>
-        </Card>
-      </div>
     </div>
   );
 };
 
-// Generate a simple audio file (1 second, 440Hz tone)
+/* ---------------- SAMPLE AUDIO GENERATION ---------------- */
+
 const generateSampleAudio = async (): Promise<Blob> => {
   const audioContext = new AudioContext();
   const sampleRate = audioContext.sampleRate;
-  const duration = 1; // 1 second
-  const frequency = 440; // A4 note
+  const duration = 1; 
+  const frequency = 440; 
 
-  const audioBuffer = audioContext.createBuffer(
-    1,
-    sampleRate * duration,
-    sampleRate
-  );
+  const audioBuffer = audioContext.createBuffer(1, sampleRate * duration, sampleRate);
   const channelData = audioBuffer.getChannelData(0);
 
-  // Generate a simple sine wave
   for (let i = 0; i < channelData.length; i++) {
     channelData[i] = Math.sin(2 * Math.PI * frequency * (i / sampleRate)) * 0.3;
   }
 
-  // Convert to WAV
   return audioBufferToWav(audioBuffer);
 };
 
-// Helper: Convert AudioBuffer to WAV blob
 const audioBufferToWav = async (audioBuffer: AudioBuffer): Promise<Blob> => {
   const numberOfChannels = audioBuffer.numberOfChannels;
   const length = audioBuffer.length * numberOfChannels * 2;
   const buffer = new ArrayBuffer(44 + length);
   const view = new DataView(buffer);
 
-  const writeString = (offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
     }
   };
 
-  // WAV header
   writeString(0, "RIFF");
   view.setUint32(4, 36 + length, true);
   writeString(8, "WAVE");
@@ -304,19 +244,14 @@ const audioBufferToWav = async (audioBuffer: AudioBuffer): Promise<Blob> => {
   writeString(36, "data");
   view.setUint32(40, length, true);
 
-  // Audio data
-  const channels: Float32Array[] = [];
-  for (let i = 0; i < numberOfChannels; i++) {
-    channels.push(audioBuffer.getChannelData(i));
-  }
-
   let offset = 44;
   for (let i = 0; i < audioBuffer.length; i++) {
     for (let channel = 0; channel < numberOfChannels; channel++) {
-      const sample = Math.max(-1, Math.min(1, channels[channel][i]));
+      const sample = audioBuffer.getChannelData(channel)[i];
+      const clamped = Math.max(-1, Math.min(1, sample));
       view.setInt16(
         offset,
-        sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+        clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff,
         true
       );
       offset += 2;
@@ -325,4 +260,3 @@ const audioBufferToWav = async (audioBuffer: AudioBuffer): Promise<Blob> => {
 
   return new Blob([buffer], { type: "audio/wav" });
 };
-

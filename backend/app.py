@@ -141,11 +141,20 @@ async def audio_embed(
     message: UploadFile = File(...),
     password: str = Form(...),
     ecc: str = Form("true"),
+    encrypt: str = Form("true"),
+
 ):
     carrier_bytes = await carrier.read()
     message_bytes = await message.read()
     try:
-        stego = embed_audio(carrier_bytes, message_bytes, password, use_ecc=_bool_from_form(ecc))
+        stego = embed_audio(
+    carrier_bytes,
+    message_bytes,
+    password,
+    encrypt=_bool_from_form(encrypt),
+    use_ecc=_bool_from_form(ecc)
+)
+
     except AudioProcessingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     buffer = io.BytesIO(stego)
@@ -157,10 +166,13 @@ async def audio_embed(
 async def audio_extract(
     carrier: UploadFile = File(...),
     password: str = Form(...),
+    encrypt: str = Form("true"),
+
 ):
     carrier_bytes = await carrier.read()
     try:
-        plain = extract_audio(carrier_bytes, password)
+        plain = extract_audio(carrier_bytes, password, encrypt=_bool_from_form(encrypt))
+
     except AudioProcessingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
@@ -178,18 +190,22 @@ async def video_embed(
     password: str = Form(...),
     ecc: str = Form("true"),  # kept for backwards compatibility
     container: str = Form("mp4"),
+    encrypt: str = Form("true"),
+
 ):
     video_bytes = await carrier.read()
     secret_message, secret_bytes, secret_filename = await _resolve_secret_payload(message, secret_file)
     try:
         content, ext = embed_video(
-            video_bytes,
-            password,
-            container=container,
-            secret_message=secret_message,
-            secret_file=secret_bytes,
-            secret_filename=secret_filename,
-        )
+    video_bytes,
+    password,
+    container=container,
+    encrypt=_bool_from_form(encrypt),
+    secret_message=secret_message,
+    secret_file=secret_bytes,
+    secret_filename=secret_filename,
+)
+
     except VideoStegoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     mime = {
@@ -206,10 +222,17 @@ async def video_embed(
 async def video_extract(
     carrier: UploadFile = File(...),
     password: str = Form(...),
+    encrypt: str = Form("true"),
+
 ):
     carrier_bytes = await carrier.read()
     try:
-        message, file_bytes, filename = extract_video(carrier_bytes, password)
+        message, file_bytes, filename = extract_video(
+    carrier_bytes,
+    password,
+    encrypt=_bool_from_form(encrypt),
+)
+
     except VideoStegoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if file_bytes is not None:
@@ -223,17 +246,21 @@ async def image_embed(
     message: UploadFile | None = File(None),
     secret_file: UploadFile | None = File(None),
     password: str = Form(...),
+    encrypt: str = Form("true"),
+
 ):
     carrier_bytes = await carrier.read()
     secret_message, secret_bytes, secret_filename = await _resolve_secret_payload(message, secret_file)
     try:
         stego_bytes = embed_image(
-            carrier_bytes,
-            password,
-            secret_message=secret_message,
-            secret_file=secret_bytes,
-            secret_filename=secret_filename,
-        )
+    carrier_bytes,
+    password,
+    encrypt=_bool_from_form(encrypt),
+    secret_message=secret_message,
+    secret_file=secret_bytes,
+    secret_filename=secret_filename,
+)
+
     except ImageStegoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     headers = {"Content-Disposition": "attachment; filename=stego.png"}
@@ -244,10 +271,17 @@ async def image_embed(
 async def image_extract(
     carrier: UploadFile = File(...),
     password: str = Form(...),
+    encrypt: str = Form("true"),
+
 ):
     carrier_bytes = await carrier.read()
     try:
-        message, file_bytes, filename = extract_image(carrier_bytes, password)
+        message, file_bytes, filename = extract_image(
+    carrier_bytes,
+    password,
+    encrypt=_bool_from_form(encrypt),
+)
+
     except ImageStegoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if file_bytes is not None:
@@ -260,9 +294,12 @@ async def text_embed(
     host_text: str = Form(...),
     message: str = Form(...),
     password: str = Form(...),
+    encrypt: str = Form("true"),
+
 ):
     try:
-        watermarked = embed_text(host_text, message, password)
+        watermarked = embed_text(host_text, message, password, encrypt=_bool_from_form(encrypt))
+
     except TextStegoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse({"watermarked": watermarked})
@@ -272,9 +309,12 @@ async def text_embed(
 async def text_extract(
     watermarked_text: str = Form(...),
     password: str = Form(...),
+    encrypt: str = Form("true"),
+
 ):
     try:
-        message = extract_text(watermarked_text, password)
+        message = extract_text(watermarked_text, password, encrypt=_bool_from_form(encrypt))
+
     except TextStegoError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse({"message": message})
